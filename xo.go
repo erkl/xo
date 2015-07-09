@@ -32,7 +32,7 @@ type Reader interface {
 	// buffer first if necessary. The byte slice is only valid until the next
 	// read operation.
 	//
-	// If Peek returns less than n bytes, it must also return an error
+	// If Peek returns fewer than n bytes, it must also return an error
 	// explaining why.
 	Peek(n int) ([]byte, error)
 
@@ -47,7 +47,7 @@ type Writer interface {
 	// internal buffer, flushing data to make room if necessary. The scratch
 	// space is only valid until the next write operation.
 	//
-	// If Reserve returns less than n bytes, it must also return an error
+	// If Reserve returns fewer than n bytes, it must also return an error
 	// explaining why.
 	Reserve(n int) ([]byte, error)
 
