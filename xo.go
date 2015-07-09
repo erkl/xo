@@ -2,6 +2,7 @@ package xo
 
 import (
 	"errors"
+	"io"
 )
 
 var (
@@ -24,8 +25,7 @@ var (
 )
 
 type Reader interface {
-	// Read implements io.Reader.
-	Read(buf []byte) (int, error)
+	io.Reader
 
 	// Peek returns at least n bytes of unread bytes from the Reader's internal
 	// buffer, without consuming them, reading more data into the internal
@@ -41,8 +41,7 @@ type Reader interface {
 }
 
 type Writer interface {
-	// Write implements io.Writer.
-	Write(buf []byte) (int, error)
+	io.Writer
 
 	// Reserve returns at least n bytes of scratch space from the Writer's
 	// internal buffer, flushing data to make room if necessary. The scratch
