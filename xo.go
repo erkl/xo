@@ -1,3 +1,4 @@
+// Package xo implements buffered I/O.
 package xo
 
 import (
