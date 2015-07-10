@@ -1,6 +1,7 @@
 package xo
 
 import (
+	"bytes"
 	"errors"
 	"io"
 )
@@ -72,6 +73,26 @@ func NewReadWriter(r Reader, w Writer) ReadWriter {
 type rw struct {
 	Reader
 	Writer
+}
+
+// PeekTo peeks further and further into r until it finds the byte c (at an
+// index greater than or equal to offset), or r.Peek returns an error.
+func PeekTo(r Reader, c byte, offset int) ([]byte, error) {
+	for {
+		buf, err := r.Peek(offset + 1)
+		if err != nil {
+			if err == io.EOF && len(buf) > 0 {
+				err = io.ErrUnexpectedEOF
+			}
+			return nil, err
+		}
+
+		if i := bytes.IndexByte(buf[offset:], c); i >= 0 {
+			return buf[:offset+i+1], nil
+		}
+
+		offset = len(buf)
+	}
 }
 
 // WriteString writes a string to w.
