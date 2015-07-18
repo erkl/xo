@@ -1,4 +1,4 @@
-// Package xo implements buffered I/O.
+// Package xo implements buffered I/O for Go.
 package xo
 
 import (

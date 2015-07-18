@@ -1,4 +1,4 @@
-Package **xo** implements buffered I/O.
+**xo** implements buffered I/O for Go.
 
 
 #### License
