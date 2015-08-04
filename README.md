@@ -1,5 +1,7 @@
 **xo** implements buffered I/O for Go.
 
+See [godoc.org](http://godoc.org/github.com/erkl/xo) for the specifics.
+
 
 #### License
 
