@@ -13,6 +13,8 @@ type LimitedReader struct {
 	N int64
 }
 
+var _ Reader = new(LimitedReader)
+
 func (lr *LimitedReader) Read(buf []byte) (int, error) {
 	if lr.N <= 0 {
 		return 0, io.EOF

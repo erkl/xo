@@ -15,6 +15,8 @@ type SizedWriter struct {
 	n   int
 }
 
+var _ Writer = new(SizedWriter)
+
 func NewSizedWriter(w io.Writer, size int) *SizedWriter {
 	if size < minWriteBufSize {
 		size = minWriteBufSize

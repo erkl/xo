@@ -15,6 +15,8 @@ type GrowingReader struct {
 	r, w int
 }
 
+var _ Reader = new(GrowingReader)
+
 func NewGrowingReader(r io.Reader) *GrowingReader {
 	return &GrowingReader{src: r}
 }
