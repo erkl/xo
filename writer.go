@@ -4,117 +4,119 @@ import (
 	"io"
 )
 
-// NewWriter creates a new Writer, using buf as its internal buffer.
-func NewWriter(w io.Writer, buf []byte) Writer {
-	return &writer{wr: w, buf: buf}
-}
+const minWriteBufSize = 16
 
-// writer implements the Writer interface.
-type writer struct {
-	wr  io.Writer
+// SizedWriter implements the Writer interface using a fixed
+// internal buffer of configurable size.
+type SizedWriter struct {
+	dst io.Writer
 	err error
 	buf []byte
 	n   int
 }
 
-func (w *writer) Write(buf []byte) (int, error) {
+func NewSizedWriter(w io.Writer, size int) *SizedWriter {
+	if size < minWriteBufSize {
+		size = minWriteBufSize
+	}
+
+	return &SizedWriter{
+		dst: w,
+		buf: make([]byte, size),
+	}
+}
+
+func (w *SizedWriter) Write(buf []byte) (int, error) {
 	var n int
 
-	// If the internal buffer already has data in it, keep filling it up.
+	// Keep writing to the buffer if there's already some
+	// data sitting in it.
 	if w.n > 0 {
 		n = copy(w.buf[w.n:], buf)
 		w.n += n
 
-		// If the internal buffer is now full, flush it.
+		// Flush the buffer if we've filled it.
 		if w.n == len(w.buf) {
-			err := w.Flush()
-			if err != nil {
+			if err := w.Flush(); err != nil {
 				return n, err
 			}
+		} else {
+			return n, nil
 		}
 	}
 
-	// Are we done already?
-	if n == len(buf) {
-		return n, nil
-	}
-
-	// If the remaining input fit in the internal buffer, simply copy it.
-	// Otherwise write it straight to the destination writer.
-	if len(buf)-n < len(w.buf) {
-		nc := copy(w.buf[w.n:], buf[n:])
-		w.n += nc
-		return n + nc, nil
+	// At this point, the internal buffer is always empty. Bypass it
+	// entirely if it's not large enough to hold what data is left.
+	if len(buf)-n >= len(w.buf) {
+		m, err := w.write(buf[n:])
+		return n + m, err
 	} else {
-		nw, err := w.write(buf[n:])
-		return n + nw, err
+		m := copy(w.buf[w.n:], buf[n:])
+		w.n += m
+		return n + m, nil
 	}
 }
 
-func (w *writer) Reserve(n int) ([]byte, error) {
+func (w *SizedWriter) Reserve(n int) ([]byte, error) {
 	if w.err != nil {
 		return nil, w.err
 	}
 
-	// Flush the buffer to make room, if necessary.
+	// If necessary, make room by flushing the buffer.
 	if n > len(w.buf)-w.n && w.n > 0 {
 		if err := w.Flush(); err != nil {
 			return nil, err
 		}
 	}
 
-	// If we're returning a slice containing fewer than n bytes because the
-	// internal buffer isn't large enough, explain this with an error.
 	if n > len(w.buf) {
-		return w.buf[w.n:], ErrBufferTooSmall
+		return nil, ErrCapacity
 	} else {
 		return w.buf[w.n:], nil
 	}
 }
 
-func (w *writer) Commit(n int) error {
+func (w *SizedWriter) Commit(n int) error {
 	switch {
 	case w.err != nil:
 		return w.err
-	case n < 0:
+	case n <= 0:
 		return nil
 	case n > len(w.buf)-w.n:
-		return ErrInvalidCommitSize
+		return errInvalidCommit
 	default:
 		w.n += n
 		return nil
 	}
 }
 
-func (w *writer) Flush() error {
-	if w.n == 0 || w.err != nil {
-		return w.err
+func (w *SizedWriter) Flush() error {
+	if w.n == 0 {
+		return nil
 	}
 
-	_, err := w.write(w.buf[:w.n])
-	if err != nil {
-		return err
+	n, err := w.write(w.buf[:w.n])
+	if n > 0 {
+		// Recover from short writes.
+		if n < w.n {
+			w.n -= copy(w.buf[0:], w.buf[n:w.n])
+		} else {
+			w.n = 0
+		}
 	}
 
-	w.n = 0
-	return nil
+	return err
 }
 
-func (w *writer) write(buf []byte) (int, error) {
+func (w *SizedWriter) write(buf []byte) (int, error) {
 	if w.err != nil {
 		return 0, w.err
 	}
 
-	n, err := w.wr.Write(buf)
-	if n < 0 {
-		n = 0
-	}
-	if err == nil && n < len(buf) {
+	n, err := w.dst.Write(buf)
+	if n < len(buf) && err == nil {
 		err = io.ErrShortWrite
-	}
-
-	// Persist errors.
-	if err != nil {
+	} else {
 		w.err = err
 	}
 

@@ -4,30 +4,28 @@ import (
 	"io"
 )
 
-// NewReader returns a new Reader, using buf as its internal buffer.
-func NewReader(r io.Reader, buf []byte) Reader {
-	return &reader{rd: r, buf: buf}
-}
+const minReadBufSize = 4096
 
-// reader implements the Reader interface.
-type reader struct {
-	rd   io.Reader
+// GrowingReader is a Reader implementation which will resize its
+// internal buffer automatically to accomodate larger Peek calls.
+type GrowingReader struct {
+	src  io.Reader
 	err  error
 	buf  []byte
 	r, w int
 }
 
-func (r *reader) Read(buf []byte) (int, error) {
-	// If the buffer is empty, either fill it again, or read straight into the
-	// provided buffer – depending on which is larger.
+func NewGrowingReader(r io.Reader) *GrowingReader {
+	return &GrowingReader{src: r}
+}
+
+func (r *GrowingReader) Read(buf []byte) (int, error) {
 	if r.r == r.w {
 		if len(buf) >= len(r.buf) {
 			return r.read(buf)
-		} else {
-			err := r.fill(1)
-			if err != nil {
-				return 0, err
-			}
+		}
+		if err := r.fill(1); err != nil {
+			return 0, err
 		}
 	}
 
@@ -36,65 +34,46 @@ func (r *reader) Read(buf []byte) (int, error) {
 	return n, nil
 }
 
-func (r *reader) Peek(n int) ([]byte, error) {
-	err := r.fill(n)
-	return r.buf[r.r:r.w], err
+func (r *GrowingReader) Peek(n int) ([]byte, error) {
+	if err := r.fill(n); err != nil {
+		return nil, err
+	} else {
+		return r.buf[r.r:r.w], nil
+	}
 }
 
-func (r *reader) Consume(n int) error {
-	switch {
-	case n < 0:
-		return nil
-	case n > r.w-r.r:
-		return ErrInvalidConsumeSize
-	default:
+func (r *GrowingReader) Discard(n int) error {
+	if n > r.w-r.r {
+		return errInvalidDiscard
+	}
+	if n > 0 {
 		r.r += n
-		return nil
+	}
+	return nil
+}
+
+func (r *GrowingReader) Shrink() {
+	// Don't bother trying to shrink a buffer that hasn't
+	// been created yet.
+	if len(r.buf) == 0 {
+		return
+	}
+
+	n := idealSize(len(r.buf), r.w-r.r)
+	if n != len(r.buf) && n > 0 {
+		r.resize(n)
 	}
 }
 
-func (r *reader) fill(n int) (err error) {
-	// We should return as much data as possible, even if we can't
-	// fit n bytes in the internal buffer.
-	if n > len(r.buf) {
-		n = len(r.buf)
-		err = ErrBufferTooSmall
-	}
-
-	// Return early if we have enough data.
-	if r.w-r.r >= n {
-		return err
-	}
-
-	// If necessary, move buffered data to make more room.
-	if r.r == r.w {
-		r.r = 0
-		r.w = 0
-	} else if n > len(r.buf)-r.r {
-		r.w = copy(r.buf[0:], r.buf[r.r:r.w])
-		r.r = 0
-	}
-
-	// Fill the buffer.
-	for r.w-r.r < n {
-		nr, err := r.read(r.buf[r.w:])
-		if err != nil {
-			return err
-		}
-		r.w += nr
-	}
-
-	return err
-}
-
-func (r *reader) read(buf []byte) (int, error) {
+func (r *GrowingReader) read(buf []byte) (int, error) {
 	if r.err != nil {
 		return 0, r.err
 	}
 
-	// Limit read attempts.
+	// To deal with weird io.Reader implementations, try calling
+	// Read operation a number of times before giving up.
 	for i := 0; i < 10; i++ {
-		n, err := r.rd.Read(buf)
+		n, err := r.src.Read(buf)
 		r.err = err
 		if n > 0 {
 			return n, nil
@@ -105,4 +84,58 @@ func (r *reader) read(buf []byte) (int, error) {
 
 	r.err = io.ErrNoProgress
 	return 0, io.ErrNoProgress
+}
+
+func (r *GrowingReader) fill(n int) error {
+	// Make sure there's enough free space after the already
+	// consumed portion of the buffer (i.e. n <= len(r.buf)-r.r).
+	if n > len(r.buf)-r.r {
+		if len(r.buf) < n {
+			m := idealSize(len(r.buf), n)
+			if m <= 0 {
+				return ErrCapacity
+			} else {
+				r.resize(m)
+			}
+		} else if r.r == r.w {
+			r.r, r.w = 0, 0
+		} else {
+			r.r, r.w = 0, copy(r.buf[0:], r.buf[r.r:r.w])
+		}
+	}
+
+	// Repeatedly request more data from our source until we have
+	// at least n bytes sitting in the buffer.
+	for r.w-r.r < n {
+		nr, err := r.read(r.buf[r.w:])
+		if err != nil {
+			return err
+		}
+		r.w += nr
+	}
+
+	return nil
+}
+
+func (r *GrowingReader) resize(n int) {
+	buf := make([]byte, n)
+	r.r = copy(buf[0:], r.buf[r.r:r.w])
+	r.w = 0
+	r.buf = buf
+}
+
+func idealSize(n, min int) int {
+	if n < minReadBufSize {
+		n = minReadBufSize
+	}
+
+	for n < min {
+		if x := n << 1; x>>1 == n {
+			return -1
+		} else {
+			n = x
+		}
+	}
+
+	return n
 }
