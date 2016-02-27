@@ -31,6 +31,10 @@ func (lr *LimitedReader) Peek(n int) ([]byte, error) {
 	var buf []byte
 	var err error
 
+	if lr.N <= 0 {
+		return nil, io.EOF
+	}
+
 	if int64(n) <= lr.N {
 		buf, err = lr.R.Peek(n)
 	} else {
@@ -50,12 +54,12 @@ func (lr *LimitedReader) Peek(n int) ([]byte, error) {
 	return buf, err
 }
 
-func (lr *LimitedReader) Seek(n int) error {
+func (lr *LimitedReader) Discard(n int) error {
 	if int64(n) > lr.N {
-		return ErrInvalidSeek
+		return errInvalidCommit
 	}
 
-	if err := lr.R.Seek(n); err != nil {
+	if err := lr.R.Discard(n); err != nil {
 		return err
 	}
 
