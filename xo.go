@@ -1,4 +1,4 @@
-// Package xo implements buffered I/O for Go.
+// Package xo implementes buffered I/O.
 package xo
 
 import (
@@ -7,55 +7,53 @@ import (
 )
 
 var (
-	// ErrBufferTooSmall may be used by Reader or Writer implementations to
-	// indicate that their internal buffers are too small to fulfill a Peek or
-	// Reserve request.
-	ErrBufferTooSmall = errors.New("xo: buffer too small")
+	// ErrCapacity may be returned by Peek or Reserve when a Reader or
+	// Writer's internal buffer is too small to satisfy the request.
+	ErrCapacity = errors.New("xo: insufficient buffer capacity")
 
-	// ErrShortPeek and ErrShortReserve describe the case that Reader.Peek
-	// or Writer.Reserve returned a smaller byte slice than requested, without
-	// also providing an error explaining why.
+	// ErrShortPeek and ErrShortReserve signal that a Peek or Reserve call
+	// yielded fewer bytes than expected but failed to return an explicit
+	// error.
 	ErrShortPeek    = errors.New("xo: short peek")
 	ErrShortReserve = errors.New("xo: short reserve")
 
-	// ErrInvalidConsumeSize and ErrInvalidCommitSize may be used by Reader or
-	// Writer implementations to indicate that the size argument in a call to
-	// Consume or Commit is invalid.
-	ErrInvalidConsumeSize = errors.New("xo: invalid consume size")
-	ErrInvalidCommitSize  = errors.New("xo: invalid commit size")
+	errInvalidDiscard = errors.New("xo: invalid discard")
+	errInvalidCommit  = errors.New("xo: invalid commit")
 )
 
 type Reader interface {
 	io.Reader
 
-	// Peek returns at least n bytes of unread bytes from the Reader's internal
-	// buffer, without consuming them, reading more data into the internal
+	// Peek returns at least n bytes of unread data from the Reader's internal
+	// buffer without consuming them, reading more data into the internal
 	// buffer first if necessary. The byte slice is only valid until the next
-	// read operation.
+	// Read or Discard operation.
 	//
-	// If Peek returns fewer than n bytes, it must also return an error
-	// explaining why.
+	// Implementations must return a slice of at least n bytes (but preferably
+	// as much as possible), or a non-nil error.
 	Peek(n int) ([]byte, error)
 
-	// Consume discards n bytes from the Reader's internal buffer.
-	Consume(n int) error
+	// Discard drops the first n bytes from the reader's internal buffer.
+	Discard(n int) error
 }
 
 type Writer interface {
 	io.Writer
 
-	// Reserve returns at least n bytes of scratch space from the Writer's
-	// internal buffer, flushing data to make room if necessary. The scratch
-	// space is only valid until the next write operation.
+	// Reserve allocates n or more bytes from the Writer's internal buffer
+	// to be used as scratch space, flushing existing data first to make room
+	// if necessary. The byte slice is only valid until the next Write or
+	// Commit call.
 	//
-	// If Reserve returns fewer than n bytes, it must also return an error
-	// explaining why.
+	// Implementations must return a slice of at least n bytes (but preferably
+	// as much as possible), or a non-nil error.
 	Reserve(n int) ([]byte, error)
 
-	// Commit commits the first n bytes of scratch space to be written.
+	// Commit commits the first n bytes of scratch space previously returned
+	// by a Reserve call, to the writer's internal buffer.
 	Commit(n int) error
 
-	// Flush writes all buffered data.
+	// Flush flushes all buffered data to the destination io.Writer.
 	Flush() error
 }
 
