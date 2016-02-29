@@ -10,7 +10,6 @@ const minReadBufSize = 4096
 // internal buffer automatically to accomodate larger Peek calls.
 type GrowingReader struct {
 	src  io.Reader
-	err  error
 	buf  []byte
 	r, w int
 }
@@ -68,15 +67,10 @@ func (r *GrowingReader) Shrink() {
 }
 
 func (r *GrowingReader) read(buf []byte) (int, error) {
-	if r.err != nil {
-		return 0, r.err
-	}
-
 	// To deal with weird io.Reader implementations, try calling
 	// Read operation a number of times before giving up.
 	for i := 0; i < 10; i++ {
 		n, err := r.src.Read(buf)
-		r.err = err
 		if n > 0 {
 			return n, nil
 		} else if err != nil {
@@ -84,7 +78,6 @@ func (r *GrowingReader) read(buf []byte) (int, error) {
 		}
 	}
 
-	r.err = io.ErrNoProgress
 	return 0, io.ErrNoProgress
 }
 

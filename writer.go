@@ -10,7 +10,6 @@ const minWriteBufSize = 16
 // internal buffer of configurable size.
 type SizedWriter struct {
 	dst io.Writer
-	err error
 	buf []byte
 	n   int
 }
@@ -60,10 +59,6 @@ func (w *SizedWriter) Write(buf []byte) (int, error) {
 }
 
 func (w *SizedWriter) Reserve(n int) ([]byte, error) {
-	if w.err != nil {
-		return nil, w.err
-	}
-
 	// If necessary, make room by flushing the buffer.
 	if n > len(w.buf)-w.n && w.n > 0 {
 		if err := w.Flush(); err != nil {
@@ -80,8 +75,6 @@ func (w *SizedWriter) Reserve(n int) ([]byte, error) {
 
 func (w *SizedWriter) Commit(n int) error {
 	switch {
-	case w.err != nil:
-		return w.err
 	case n <= 0:
 		return nil
 	case n > len(w.buf)-w.n:
@@ -99,7 +92,7 @@ func (w *SizedWriter) Flush() error {
 
 	n, err := w.write(w.buf[:w.n])
 	if n > 0 {
-		// Recover from short writes.
+		// Deal with short writes sensibly.
 		if n < w.n {
 			w.n -= copy(w.buf[0:], w.buf[n:w.n])
 		} else {
@@ -111,15 +104,9 @@ func (w *SizedWriter) Flush() error {
 }
 
 func (w *SizedWriter) write(buf []byte) (int, error) {
-	if w.err != nil {
-		return 0, w.err
-	}
-
 	n, err := w.dst.Write(buf)
 	if n < len(buf) && err == nil {
 		err = io.ErrShortWrite
-	} else {
-		w.err = err
 	}
 
 	return n, err
